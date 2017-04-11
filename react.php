@@ -14,17 +14,19 @@ $socket = new \React\Socket\Server(8033, $loop);
 
 echo 'http://localhost:8033' . PHP_EOL;
 
-$http = new HttpServer($socket, function (\Psr\Http\Message\RequestInterface $request) {
+/** @var \Interop\Container\ContainerInterface $container */
+$container = require 'config/container.php';
 
-    /** @var \Interop\Container\ContainerInterface $container */
-    $container = require 'config/container.php';
+/** @var \Zend\Expressive\Application $app */
+$app = $container->get(\Zend\Expressive\Application::class);
+/* @var $app \Zend\Expressive\Application */
 
-    /** @var \Zend\Expressive\Application $app */
-    $app = $container->get(\Zend\Expressive\Application::class);
-    /* @var $app \Zend\Expressive\Application */
+require 'config/pipeline.php';
+require 'config/routes.php';
 
-    require 'config/pipeline.php';
-    require 'config/routes.php';
+$handledRequests = 0;
+
+$http = new HttpServer($socket, function (\Psr\Http\Message\RequestInterface $request) use ($app, &$handledRequests) {
 
     try {
         $request = new \Zend\Diactoros\ServerRequest($_SERVER, [], $request->getUri(), $request->getMethod(), $request->getBody(), $request->getHeaders(), $request->getHeader('cookie'), \RingCentral\Psr7\parse_query($request->getUri()->getQuery(), true), $request->getBody());
@@ -35,25 +37,22 @@ $http = new HttpServer($socket, function (\Psr\Http\Message\RequestInterface $re
             $response->getStatusCode(), $response->getHeaders(), $response->getBody()->getContents()
         );
     } catch (\Throwable $ex) {
-        dump($ex);
         $reactResponse = new React\Http\Response(
             500, [
             'content-type' => 'text/plain'
             ], 'Error 500 occurred'
         );
     }
-
+    $handledRequests ++;
     return $reactResponse;
 });
 
-$loop->addPeriodicTimer(1, function () use (&$i) {
+$loop->addPeriodicTimer(20, function () use (&$handledRequests) {
+    gc_collect_cycles();
+    $kmem = round(memory_get_usage(true) / 1024, 2) ;
+    $mem = round(memory_get_usage() / 1024,2);
     echo date('[d.m.Y H:i:s]') . PHP_EOL;
-});
-$loop->addPeriodicTimer(2, function () use (&$i) {
-    var_dump(gc_collect_cycles());
-    $kmem = memory_get_usage(true) / 1024;
-    $mem = memory_get_usage() / 1024;
-    echo "Request: $i\n";
+    echo "Requests: $handledRequests\n";
     echo "Memory: $mem KiB\n";
     echo "Real Memory: $kmem KiB\n";
 });
